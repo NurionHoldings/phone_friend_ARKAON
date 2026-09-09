@@ -62,6 +62,24 @@ async function run() {
     assert(typeof view.session_id === 'string', 'session_id 유지');
   }
 
+  console.log('▸ TC-2b: 문자 조회 카드');
+  {
+    const view = await api.handleTurn({
+      utterance: '최근 문자 보여줘',
+      subject: 'user:web',
+      idempotency_key: 'web-msg-read-1',
+      now: '2026-09-04T11:00:00+09:00',
+    });
+
+    assert(view.scenario === 'MESSAGE_READ', 'MESSAGE_READ scenario');
+    assert(view.executed === true, '문자 조회 실행');
+    assert(
+      view.cards.some((card) => card.type === 'message_list'),
+      'message_list 카드'
+    );
+    assert(view.authority_granted === false, '조회 Authority false');
+  }
+
   console.log('▸ TC-3: 안전 검사 카드');
   {
     const view = await api.handleTurn({

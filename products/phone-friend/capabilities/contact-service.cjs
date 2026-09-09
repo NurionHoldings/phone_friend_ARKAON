@@ -24,6 +24,11 @@ const {
   CONTACT_METHOD,
 } = require('../contacts/contact-analyzer.cjs');
 
+const {
+  CAPABILITY,
+  SKILL_ACTION,
+} = require('./catalog.cjs');
+
 function clone(value) {
   if (value === undefined) return undefined;
   return JSON.parse(JSON.stringify(value));
@@ -53,12 +58,11 @@ class ContactService {
       product: 'PHONE_FRIEND',
 
       /**
-       * catalog에 CONTACT 축을 아직 추가하지 않는다.
-       * 이번 v0.1에서는 intent가 domain/action을 직접 명시한다.
+       * CONTACT catalog 축 — MERGE/DELETE는 카탈로그/구현 모두 제외.
        */
-      product_capability: 'CONTACT_MAINTENANCE',
+      product_capability: CAPABILITY.CONTACT,
 
-      capability: 'CONTACT_READ',
+      capability: SKILL_ACTION.CONTACT_READ,
 
       domain: 'PRIVACY',
 

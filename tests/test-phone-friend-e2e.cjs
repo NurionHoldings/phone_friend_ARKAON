@@ -146,6 +146,32 @@ async function run() {
     );
   }
 
+  console.log('▸ E2E-3b: 문자 조회 MESSAGE_READ');
+  {
+    const result = await runtime.handle({
+      utterance: '엄마 문자 확인해줘',
+      subject: 'user:e2e',
+      idempotency_key: 'e2e-msg-read-1',
+      now: BASE,
+    });
+
+    assert(result.scenario === 'MESSAGE_READ', 'MESSAGE_READ');
+    assert(result.executed === true, '문자 조회 실행');
+    const messages =
+      result.capability_result.execution.connector_result.messages;
+    assert(
+      Array.isArray(messages) && messages.length >= 1,
+      '엄마 관련 문자 조회'
+    );
+    assert(
+      messages.every(
+        (message) => message.from === '엄마' || message.to === '엄마'
+      ),
+      '조회 결과가 엄마 관련'
+    );
+    assert(result.authority_granted === false, 'READ ≠ Authority');
+  }
+
   console.log('▸ E2E-4: 이상 문자 SAFETY WARN');
   {
     const result = await runtime.handle({

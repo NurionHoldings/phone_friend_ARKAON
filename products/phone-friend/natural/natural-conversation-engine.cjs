@@ -31,6 +31,7 @@ const {
 const NATURAL_GOAL = Object.freeze({
   CONTACT_MAINTENANCE: 'CONTACT_MAINTENANCE',
   PROGRESS_FEEDBACK: 'PROGRESS_FEEDBACK',
+  MESSAGE_READ: 'MESSAGE_READ',
   MESSAGE_SEND: 'MESSAGE_SEND',
   CALENDAR_READ: 'CALENDAR_READ',
   SAFETY_TEXT: 'SAFETY_TEXT',
@@ -291,6 +292,43 @@ class NaturalConversationEngine {
       });
     }
 
+    // MESSAGE_READ paraphrases (after SEND/SAFETY to avoid collision)
+    if (this._isMessageRead(text)) {
+      const recipient = extractRecipient(text);
+      return this._result({
+        handled: true,
+        goal: NATURAL_GOAL.MESSAGE_READ,
+        status: 'ROUTE_CAPABILITY',
+        assistant_text: null,
+        plan: createDialoguePlan({
+          goal: NATURAL_GOAL.MESSAGE_READ,
+          capability_candidates: ['MESSAGE_READ'],
+          slots: { recipient, limit: 10 },
+          risk_boundary: RISK_BOUNDARY.READ,
+          mutate: false,
+          status: PLAN_STATUS.READY_FOR_CAPABILITY,
+        }),
+        progress_seed: [
+          {
+            stage: PROGRESS_STAGE.UNDERSTANDING,
+            text: '문자 조회 요청으로 이해했어요.',
+            mark: 'done',
+          },
+          {
+            stage: PROGRESS_STAGE.ANALYZING,
+            text: '최근 문자를 확인하고 있어요.',
+            mark: 'active',
+          },
+        ],
+        route: {
+          kind: 'MESSAGE_READ',
+          utterance: text,
+          slots: { recipient, limit: 10 },
+        },
+        state: null,
+      });
+    }
+
     // CALENDAR_READ paraphrases
     if (this._isCalendarRead(text)) {
       return this._result({
@@ -439,6 +477,16 @@ class NaturalConversationEngine {
       return true;
     }
     return false;
+  }
+
+  _isMessageRead(text) {
+    if (!/(문자|메시지|톡|문자함|수신함)/.test(text)) {
+      return false;
+    }
+    if (/(보내|전송|이상|수상|위험|피싱|검사|믿어도)/.test(text)) {
+      return false;
+    }
+    return /(읽|조회|보여|확인|목록|받은\s*문자|최근\s*문자)/.test(text);
   }
 
   _isCalendarRead(text) {

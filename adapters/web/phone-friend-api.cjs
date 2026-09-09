@@ -58,7 +58,23 @@ function pickAssistantText(result) {
   }
 
   if (result.scenario === 'IMAGE') {
+    if (result.status === 'IMAGE_NOT_IMPLEMENTED') {
+      return '사진 보정은 아직 준비 중이에요. 지금은 실행하지 않아요.';
+    }
     return '사진을 SNS에 올리는 건 개인정보 공유로 보여서, 지금은 바로 실행하지 않고 확인이 필요해요.';
+  }
+
+  if (result.scenario === 'MESSAGE_READ' && result.executed) {
+    const messages =
+      (result.capability_result &&
+        result.capability_result.execution &&
+        result.capability_result.execution.connector_result &&
+        result.capability_result.execution.connector_result.messages) ||
+      [];
+    if (messages.length === 0) {
+      return '확인된 문자가 없어요. 보내거나 지우지는 않았어요.';
+    }
+    return `최근 문자 ${messages.length}건을 확인했어요. 보내거나 지우지는 않았어요.`;
   }
 
   if (result.scenario === 'LIFE_AGENT' || result.scenario === 'FINANCIAL') {
@@ -181,6 +197,26 @@ function buildCards(result) {
         content: message.content,
       });
     }
+  }
+
+  if (result.scenario === 'MESSAGE_READ' && result.capability_result) {
+    const messages =
+      (result.capability_result.execution &&
+        result.capability_result.execution.connector_result &&
+        result.capability_result.execution.connector_result.messages) ||
+      [];
+
+    cards.push({
+      type: 'message_list',
+      title: '최근 문자',
+      messages: messages.map((message) => ({
+        from: message.from,
+        to: message.to,
+        content: message.content,
+        sent_at: message.sent_at,
+      })),
+      note: '조회만 했고, 보내거나 지우지 않았어요.',
+    });
   }
 
   if (result.scenario === 'SAFETY_TEXT') {

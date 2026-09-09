@@ -443,6 +443,33 @@ class PhoneFriendRuntime {
         );
       }
 
+      if (natural.route && natural.route.kind === 'MESSAGE_READ') {
+        const routed = await this._handleAfterNaturalRoute(
+          {
+            ...input,
+            utterance:
+              natural.route.utterance || utterance,
+            subject,
+            device_id: deviceId,
+            now,
+          },
+          natural
+        );
+        return this._withProgress(
+          routed,
+          naturalKey,
+          [
+            ...(natural.progress || []),
+            this.narrator.fromRuntimeStatus(
+              routed.status,
+              routed.executed
+                ? '문자를 확인했어요. 보내거나 지우지는 않았어요.'
+                : null
+            ),
+          ]
+        );
+      }
+
       if (natural.route && natural.route.kind === 'CALENDAR_READ') {
         const routed = await this._handleAfterNaturalRoute(
           {
@@ -834,11 +861,10 @@ class PhoneFriendRuntime {
       (intent && intent.product_capability === 'IMAGE')
     ) {
       const target = resolveCoreTarget(intent);
+      const isPrivacyShare =
+        target.domain === 'PRIVACY' && target.action === 'SHARE';
       return clone({
-        status:
-          target.domain === 'PRIVACY' && target.action === 'SHARE'
-            ? 'HOLD'
-            : 'IMAGE_NOT_IMPLEMENTED',
+        status: isPrivacyShare ? 'HOLD' : 'IMAGE_NOT_IMPLEMENTED',
         executed: false,
         authority_granted: false,
         scenario: 'IMAGE',
@@ -846,6 +872,9 @@ class PhoneFriendRuntime {
         target,
         escalation: target.escalation,
         note: 'IMAGE capability not implemented; no Gate bypass',
+        assistant_text: isPrivacyShare
+          ? '사진을 SNS에 올리는 건 개인정보 공유로 보여서, 지금은 바로 실행하지 않고 확인이 필요해요.'
+          : '사진 보정은 아직 준비 중이에요. 지금은 실행하지 않아요.',
       });
     }
 
@@ -871,6 +900,10 @@ class PhoneFriendRuntime {
         gate_result: convo.gate_result,
         required_gates:
           convo.decision && convo.decision.required_gates,
+        assistant_text:
+          skill === 'KIOSK_ASSIST'
+            ? '키오스크·예약 도움은 본인확인과 권한이 필요해서 지금은 보류했어요.'
+            : '이 작업은 본인확인과 권한이 필요해요. 지금은 진행을 보류했어요.',
       });
     }
 
@@ -899,6 +932,46 @@ class PhoneFriendRuntime {
         scenario: 'CALENDAR_READ',
         conversation: convo,
         capability_result: result,
+      });
+    }
+
+    // MESSAGE_READ → memory/device messaging connector (no mutate)
+    if (skill === 'MESSAGE_READ') {
+      const recipient =
+        (intent.slots && intent.slots.recipient) ||
+        input.recipient ||
+        null;
+      const limit =
+        (intent.slots && intent.slots.limit) || input.limit || 10;
+
+      const result = await this.messaging.read(this.capability, {
+        subject,
+        device_id: deviceId,
+        recipient,
+        limit,
+        idempotency_key:
+          input.idempotency_key ||
+          `e2e-msg-read:${recipient || 'all'}:${Date.parse(now) || 0}`,
+        now,
+      });
+
+      const messages =
+        (result.execution &&
+          result.execution.connector_result &&
+          result.execution.connector_result.messages) ||
+        [];
+
+      return clone({
+        status: result.status,
+        executed: result.executed === true,
+        authority_granted: false,
+        scenario: 'MESSAGE_READ',
+        conversation: convo,
+        capability_result: result,
+        assistant_text:
+          messages.length > 0
+            ? `최근 문자 ${messages.length}건을 확인했어요. 보내거나 지우지는 않았어요.`
+            : '확인된 문자가 없어요. 보내거나 지우지는 않았어요.',
       });
     }
 
@@ -1027,6 +1100,42 @@ class PhoneFriendRuntime {
           result.execution &&
           result.execution.connector_result &&
           result.execution.connector_result.findings,
+      });
+    }
+
+    if (kind === 'MESSAGE_READ') {
+      const slots = (natural.route && natural.route.slots) || {};
+      const recipient = slots.recipient || input.recipient || null;
+      const limit = slots.limit || input.limit || 10;
+
+      const result = await this.messaging.read(this.capability, {
+        subject,
+        device_id: deviceId,
+        recipient,
+        limit,
+        idempotency_key:
+          input.idempotency_key ||
+          `e2e-msg-read:${recipient || 'all'}:${Date.parse(now) || 0}`,
+        now,
+      });
+
+      const messages =
+        (result.execution &&
+          result.execution.connector_result &&
+          result.execution.connector_result.messages) ||
+        [];
+
+      return clone({
+        status: result.status,
+        executed: result.executed === true,
+        authority_granted: false,
+        scenario: 'MESSAGE_READ',
+        dialogue_plan: natural.dialogue_plan,
+        capability_result: result,
+        assistant_text:
+          messages.length > 0
+            ? `최근 문자 ${messages.length}건을 확인했어요. 보내거나 지우지는 않았어요.`
+            : '확인된 문자가 없어요. 보내거나 지우지는 않았어요.',
       });
     }
 

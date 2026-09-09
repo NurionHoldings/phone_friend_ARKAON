@@ -29,6 +29,7 @@ const {
 /** @deprecated use SKILL_ACTION — kept for test/API compat */
 const CAPABILITIES = Object.freeze({
   CALENDAR_READ: SKILL_ACTION.CALENDAR_READ,
+  MESSAGE_READ: SKILL_ACTION.MESSAGE_READ,
   MESSAGE_SEND: SKILL_ACTION.MESSAGE_SEND,
   CALL_RISK_ANALYSIS: SKILL_ACTION.CALL_RISK_ANALYSIS,
   CALL_BLOCK: SKILL_ACTION.CALL_BLOCK,
@@ -233,9 +234,31 @@ class MobileIntentRouter {
       });
     }
 
-    // COMMUNICATION / WRITE — 문자/메시지 + paraphrase ("알려줘", "말해놔")
+    // COMMUNICATION / READ — 문자 조회 (SEND·SAFETY보다 좁은 패턴)
     else if (
-      /(문자|메시지|톡)\s*(보내|전송)?/.test(text) ||
+      /(문자|메시지|톡)/.test(text) &&
+      /(읽|조회|보여|확인|목록|받은|최근)/.test(text) &&
+      !/(보내|전송|이상|수상|위험|피싱|검사)/.test(text)
+    ) {
+      const recipient = extractRecipient(text);
+      intent = buildIntent({
+        domain: DOMAINS.COMMUNICATION,
+        action: ACTIONS.READ,
+        capability: CAPABILITIES.MESSAGE_READ,
+        title: text,
+        slots: {
+          recipient,
+          limit: 10,
+        },
+        missing_slots: [],
+        confidence: 0.86,
+        raw_text: text,
+      });
+    }
+
+    // COMMUNICATION / WRITE — 문자 발송 + paraphrase ("알려줘", "말해놔")
+    else if (
+      (/(문자|메시지|톡)/.test(text) && /(보내|전송)/.test(text)) ||
       (/보내줘/.test(text) && /(문자|메시지)/.test(text)) ||
       (/(한테|에게|께)/.test(text) &&
         /(알려줘|알려\s*줘|말해줘|말해놔|전해줘)/.test(text))

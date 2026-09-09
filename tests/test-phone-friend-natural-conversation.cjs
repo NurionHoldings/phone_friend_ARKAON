@@ -149,6 +149,26 @@ async function run() {
     assert(view.authority_granted === false, 'view Authority false');
   }
 
+  console.log('▸ TC-4b: paraphrase → MESSAGE_READ');
+  {
+    const api = new PhoneFriendWebApi({
+      runtime: new PhoneFriendRuntime(),
+    });
+    const view = await api.handleTurn({
+      utterance: '엄마 문자 확인해줘',
+      subject: 'user:nat',
+      idempotency_key: 'nat-msg-read-1',
+      now: '2026-09-04T11:00:00+09:00',
+    });
+    assert(view.scenario === 'MESSAGE_READ', 'MESSAGE_READ scenario');
+    assert(view.executed === true, 'MESSAGE_READ executed');
+    assert(view.authority_granted === false, 'MESSAGE_READ Authority false');
+    assert(
+      view.cards.some((card) => card.type === 'message_list'),
+      'message_list 카드'
+    );
+  }
+
   console.log('▸ TC-5: paraphrase → CALENDAR_READ');
   {
     const interpreted = engine.interpret({

@@ -160,6 +160,27 @@
       el.appendChild(p);
     }
 
+    if (card.type === 'message_list') {
+      const note = document.createElement('p');
+      note.textContent = card.note || '조회만 했어요.';
+      el.appendChild(note);
+
+      if (Array.isArray(card.messages) && card.messages.length) {
+        const ul = document.createElement('ul');
+        card.messages.slice(0, 8).forEach((message) => {
+          const li = document.createElement('li');
+          const who = message.from || message.to || '';
+          li.textContent = `${who}: ${message.content || ''}`;
+          ul.appendChild(li);
+        });
+        el.appendChild(ul);
+      } else {
+        const empty = document.createElement('p');
+        empty.textContent = '표시할 문자가 없어요.';
+        el.appendChild(empty);
+      }
+    }
+
     if (card.type === 'contact') {
       const p = document.createElement('p');
       p.textContent =

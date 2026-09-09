@@ -29,6 +29,12 @@ const {
 } = require('../products/phone-friend/capabilities/contact-service.cjs');
 
 const {
+  CAPABILITY,
+  SKILL_ACTION,
+  resolveProductCapability,
+} = require('../products/phone-friend/capabilities/catalog.cjs');
+
+const {
   ContactAnalyzer,
   CONTACT_METHOD,
   normalizePhone,
@@ -216,7 +222,16 @@ async function run() {
       method: CONTACT_METHOD.DUPLICATES,
     });
 
-    assert(intent.capability === 'CONTACT_READ', 'CONTACT_READ capability');
+    assert(intent.capability === SKILL_ACTION.CONTACT_READ, 'CONTACT_READ capability');
+    assert(
+      intent.product_capability === CAPABILITY.CONTACT,
+      'CONTACT product capability'
+    );
+    assert(
+      resolveProductCapability(SKILL_ACTION.CONTACT_READ) ===
+        CAPABILITY.CONTACT,
+      'catalog CONTACT 매핑'
+    );
     assert(intent.domain === 'PRIVACY', 'PRIVACY domain');
     assert(intent.action === 'READ', 'READ action');
     assert(intent.authority_granted === false, 'Authority false');
