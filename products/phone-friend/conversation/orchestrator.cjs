@@ -76,7 +76,20 @@ class ConversationOrchestrator {
     this.sessions = opts.sessionStore || new ConversationSessionStore();
     this.decisions = opts.decisionEngine || new DecisionEngine();
     this.gateEngine = opts.gateEngine || null;
+    this.audit = opts.auditEngine || null;
     this.contacts = Array.isArray(opts.contacts) ? clone(opts.contacts) : [];
+  }
+
+  _attachIssuedContinuation(result, token) {
+    if (!token || !result || !result.session) return result;
+
+    return {
+      ...result,
+      session: {
+        ...result.session,
+        continuation_token: token,
+      },
+    };
   }
 
   /**
@@ -96,6 +109,7 @@ class ConversationOrchestrator {
     const utterance = String(input.utterance || '').trim();
 
     let session = null;
+    let issuedContinuationToken = null;
 
     if (input.session_id) {
       session = this.sessions.get(input.session_id, now);
@@ -108,6 +122,69 @@ class ConversationOrchestrator {
           response: renderResponse(
             RESPONSE_KIND.DENY,
             '대화 세션이 만료되었습니다. 다시 말씀해 주세요.'
+          ),
+        };
+      }
+
+      const continuation = this.sessions.validateContinuation(
+        input.session_id,
+        input.continuation_token,
+        now
+      );
+
+      if (!continuation.ok) {
+        if (this.audit) {
+          this.audit.append({
+            event: 'CONVERSATION_SESSION_BINDING_DENIED',
+            data: {
+              resource_id: input.session_id,
+              reason: continuation.reason,
+              expected_subject_bound: Boolean(session && session.subject),
+              expected_device_bound: Boolean(session && session.device_id),
+            },
+          });
+        }
+
+        return {
+          session: session ? clone(session) : null,
+          intent: null,
+          decision: null,
+          gate_result: null,
+          response: renderResponse(
+            RESPONSE_KIND.DENY,
+            '이 대화는 계속할 수 없습니다. 새로 시작해 주세요.'
+          ),
+        };
+      }
+
+      if (
+        session &&
+        !this.sessions.bindingMatches(session, {
+          subject: input.subject,
+          device_id: input.device_id,
+        })
+      ) {
+        if (this.audit) {
+          this.audit.append({
+            event: 'CONVERSATION_SESSION_BINDING_DENIED',
+            subject: session.subject || null,
+            data: {
+              resource_id: session.id,
+              reason: 'subject_or_device_mismatch',
+              expected_subject_bound: Boolean(session.subject),
+              expected_device_bound: Boolean(session.device_id),
+            },
+          });
+        }
+
+        return {
+          session: clone(session),
+          intent: null,
+          decision: null,
+          gate_result: null,
+          response: renderResponse(
+            RESPONSE_KIND.DENY,
+            '이 대화는 현재 사용자 또는 기기에서 계속할 수 없습니다.'
           ),
         };
       }
@@ -144,6 +221,7 @@ class ConversationOrchestrator {
         slots: intent.slots,
         now,
       });
+      issuedContinuationToken = session.continuation_token || null;
     } else {
       session = this.sessions.update(
         session.id,
@@ -166,7 +244,10 @@ class ConversationOrchestrator {
       now
     );
 
-    return this._advance(session, intent, input, now);
+    return this._attachIssuedContinuation(
+      this._advance(session, intent, input, now),
+      issuedContinuationToken
+    );
   }
 
   _handleConfirmation(session, utterance, input, now) {
