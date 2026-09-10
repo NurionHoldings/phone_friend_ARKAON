@@ -265,6 +265,7 @@ class PhoneFriendRuntime {
         gateEngine: this.gates,
         contacts: opts.contacts || [],
         sessionStore: opts.sessionStore,
+        auditEngine: this.audit,
       });
 
     this.narrator =
@@ -688,7 +689,21 @@ class PhoneFriendRuntime {
         llmSuggestion: input.llmSuggestion,
         forceAuthority: input.forceAuthority,
         gate_context: input.gate_context,
+        continuation_token: input.continuation_token,
       });
+
+      if (
+        convo.response &&
+        convo.response.kind === RESPONSE_KIND.DENY
+      ) {
+        return clone({
+          status: 'DENY',
+          executed: false,
+          authority_granted: false,
+          conversation: convo,
+          scenario: pending.kind,
+        });
+      }
 
       if (
         convo.session &&
@@ -850,6 +865,7 @@ class PhoneFriendRuntime {
       llmSuggestion: input.llmSuggestion,
       forceAuthority: input.forceAuthority,
       gate_context: input.gate_context,
+      continuation_token: input.continuation_token,
     });
 
     const intent = convo.intent;
@@ -1156,6 +1172,7 @@ class PhoneFriendRuntime {
         },
         forceAuthority: input.forceAuthority,
         gate_context: input.gate_context,
+        continuation_token: input.continuation_token,
       });
 
       const intent = convo.intent;
