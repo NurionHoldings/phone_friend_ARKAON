@@ -24,7 +24,7 @@
 - Sol BLOCK delta: pending confirmation 경로의 nested DENY는 즉시 top-level `DENY`로 반환한다. `VERIFY_FAILED → VERIFY_FAILED` 재검증 실패 전이를 명시하고, 비가역 action은 Runtime 레벨에서도 rollback을 거부한다. lockfile이 없으므로 CI의 npm cache를 제거했다.
 - Node 전체 테스트 및 정적 검사: `npm run verify` PASS — Node test files 17개, assertion 718개 PASS; 모든 `.cjs`에 `node --check` PASS.
 - Android: `android/gradlew` wrapper 부재. Kotlin 컴파일 테스트 대신 permission/client 전달 정적 계약 검사를 `npm run verify`에 포함했고 PASS.
-- CI: `PENDING` (최종 HEAD에서 감사 통과 후 1회 실행)
-- 배포: `PENDING` (CI GREEN 이후 별도 확인, 본 작업에서 실행하지 않음)
+- CI: 원격 HEAD `e6b0053`의 GitHub Actions `verify` run #1 (`34433457116`) SUCCESS.
+- 배포: 코드와 분리된 `BLOCKED`. 확인 1회차에서 GitHub commit status에 Netlify 상태가 없었고, 확인 2회차에서 연결된 Netlify 계정에 `phone` 관련 프로젝트가 없었다. 동일 상태 추가 조회 없이 중단했으며, 기존 site ID 제공 또는 신규 site 생성·연결 결정이 필요하다.
 - 실패 원인 및 수정: 기존 `verify` 스크립트가 가리키는 `tests/verify-core.cjs`가 없어서 실제 전체 검증이 불가능한 상태였음. 전체 Node test runner와 정적 검사로 교체해 수정. Sol 검토에서 continuation token 미구현·pending DENY 미전파·VERIFY_FAILED 재검증 불일치·lockfile 없는 npm cache를 발견해 본 delta로 수정.
 - 원격 반영 이력: 일반 Git push는 HTTPS 자격증명 부재로 실패했고 GitHub integration도 최초 `403 Resource not accessible by integration`으로 거부되어 동일 상태 재시도 없이 중단함. 사용자가 저장소 접근을 저장한 뒤 branch 생성과 19개 변경 파일 반영이 성공했으며, 구현 파일 반영 마지막 원격 커밋은 `79519b3`이다. 본 원장 갱신 커밋을 최종 pre-PR HEAD로 삼아 CI를 1회 실행한다.
