@@ -11,6 +11,9 @@
 const {
   PhoneFriendRuntime,
 } = require('../../products/phone-friend/runtime/phone-friend-runtime.cjs');
+const {
+  ConversationSessionStore,
+} = require('../../products/phone-friend/sessions/conversation-session-store.cjs');
 
 function clone(value) {
   if (value === undefined) return undefined;
@@ -316,6 +319,9 @@ function toViewModel(result) {
     session_id: sessionId,
     natural_session_id:
       (result && result.natural_session_id) || sessionId,
+    continuation_token:
+      (result && result.conversation && result.conversation.session &&
+        result.conversation.session.continuation_token) || null,
     status: normalizeUiStatus(result),
     scenario: (result && result.scenario) || null,
     assistant_text: pickAssistantText(result),
@@ -336,7 +342,15 @@ function toViewModel(result) {
 class PhoneFriendWebApi {
   constructor(opts = {}) {
     this.runtime =
-      opts.runtime || new PhoneFriendRuntime(opts.runtimeOpts || {});
+      opts.runtime || new PhoneFriendRuntime({
+        ...(opts.runtimeOpts || {}),
+        /** Public HTTP sessions never accept session_id as a credential. */
+        sessionStore:
+          (opts.runtimeOpts && opts.runtimeOpts.sessionStore) ||
+          new ConversationSessionStore({
+            requireContinuationToken: true,
+          }),
+      });
   }
 
   async handleTurn(input = {}) {
@@ -373,9 +387,27 @@ class PhoneFriendWebApi {
       forceAuthority: input.forceAuthority,
       gate_context: input.gate_context,
       permission_ok: input.permission_ok,
+      continuation_token: input.continuation_token,
     });
 
-    return toViewModel(result);
+    const view = toViewModel(result);
+
+    /**
+     * The token is issued only at session creation; for an accepted
+     * continuation the client already holds it, so it may be echoed without
+     * putting it into session storage or Audit.
+     */
+    if (
+      !view.continuation_token &&
+      view.status !== 'DENY' &&
+      input.session_id &&
+      typeof input.continuation_token === 'string' &&
+      input.continuation_token !== ''
+    ) {
+      view.continuation_token = input.continuation_token;
+    }
+
+    return view;
   }
 }
 

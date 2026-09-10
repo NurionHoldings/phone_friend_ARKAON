@@ -12,6 +12,7 @@
   const progressPanel = document.getElementById('progressPanel');
 
   let sessionId = null;
+  let continuationToken = null;
   let naturalSessionId = null;
   let lastUiStatus = 'IDLE';
   let recognition = null;
@@ -247,6 +248,7 @@
         body: JSON.stringify({
           utterance,
           session_id: sessionId,
+          continuation_token: continuationToken,
           natural_session_id: naturalSessionId,
           subject: 'user:web',
           device_id: 'web-browser',
@@ -261,6 +263,7 @@
       }
 
       sessionId = data.session_id || sessionId;
+      continuationToken = data.continuation_token || continuationToken;
       naturalSessionId =
         data.natural_session_id || naturalSessionId || sessionId;
       lastUiStatus = data.status || 'ANSWER';

@@ -31,6 +31,10 @@ class PhoneFriendApiClient(
     ): ContactAnalysisResponse =
         withContext(Dispatchers.IO) {
 
+            if (!snapshot.permissionGranted) {
+                throw IOException("READ_CONTACTS permission was not granted")
+            }
+
             val contactsJson = JSONArray()
 
             snapshot.contacts.forEach { contact ->
@@ -47,8 +51,10 @@ class PhoneFriendApiClient(
 
             val payload =
                 JSONObject()
+                    .put("client", "ANDROID")
                     .put("method", method)
                     .put("contacts", contactsJson)
+                    .put("permission_granted", true)
                     .put("mutation_performed", false)
                     .put("authority_granted", false)
 

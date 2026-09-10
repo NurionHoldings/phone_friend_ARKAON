@@ -17,6 +17,32 @@ const HIGH_RISK = new Set([
   'CRITICAL',
 ]);
 
+/**
+ * Runtime status is a small, explicit state machine.  Keeping it here (rather
+ * than trusting every caller) prevents an adapter or connector from marking an
+ * action as verified, failed, or rolled back out of order.
+ */
+const ALLOWED_STATUS_TRANSITIONS = Object.freeze({
+  [ACTION_RUNTIME_STATUS.READY]: [ACTION_RUNTIME_STATUS.EXECUTING],
+  [ACTION_RUNTIME_STATUS.EXECUTING]: [
+    ACTION_RUNTIME_STATUS.SUCCEEDED,
+    ACTION_RUNTIME_STATUS.FAILED,
+  ],
+  [ACTION_RUNTIME_STATUS.SUCCEEDED]: [
+    ACTION_RUNTIME_STATUS.VERIFIED,
+    ACTION_RUNTIME_STATUS.VERIFY_FAILED,
+    ACTION_RUNTIME_STATUS.ROLLED_BACK,
+  ],
+  [ACTION_RUNTIME_STATUS.VERIFY_FAILED]: [
+    ACTION_RUNTIME_STATUS.VERIFIED,
+    ACTION_RUNTIME_STATUS.VERIFY_FAILED,
+    ACTION_RUNTIME_STATUS.ROLLED_BACK,
+  ],
+  [ACTION_RUNTIME_STATUS.VERIFIED]: [ACTION_RUNTIME_STATUS.ROLLED_BACK],
+  [ACTION_RUNTIME_STATUS.FAILED]: [],
+  [ACTION_RUNTIME_STATUS.ROLLED_BACK]: [],
+});
+
 function clone(value) {
   if (value === undefined) return undefined;
   return JSON.parse(JSON.stringify(value));
@@ -286,6 +312,22 @@ class ActionRuntime {
       );
     }
 
+    const allowed =
+      ALLOWED_STATUS_TRANSITIONS[stored.status] || [];
+
+    if (!allowed.includes(status)) {
+      throw new Error(
+        `invalid runtime status transition:${stored.status}->${status}`
+      );
+    }
+
+    if (
+      status === ACTION_RUNTIME_STATUS.ROLLED_BACK &&
+      stored.reversible !== true
+    ) {
+      throw new Error('irreversible runtime action cannot be rolled back');
+    }
+
     const next = {
       ...stored,
       ...clone(extra),
@@ -310,6 +352,7 @@ class ActionRuntime {
 module.exports = {
   ActionRuntime,
   ACTION_RUNTIME_STATUS,
+  ALLOWED_STATUS_TRANSITIONS,
   HIGH_RISK,
   hasGateCheck,
 };

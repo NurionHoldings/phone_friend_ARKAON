@@ -733,6 +733,16 @@ class ExecutionEngine {
       );
     }
 
+    if (
+      execution.status !== ACTION_RUNTIME_STATUS.SUCCEEDED &&
+      execution.status !== ACTION_RUNTIME_STATUS.VERIFY_FAILED &&
+      execution.status !== ACTION_RUNTIME_STATUS.VERIFIED
+    ) {
+      throw new Error(
+        'execution cannot be rolled back in current state'
+      );
+    }
+
     const action =
       this.runtime.get(
         execution.runtime_action_id

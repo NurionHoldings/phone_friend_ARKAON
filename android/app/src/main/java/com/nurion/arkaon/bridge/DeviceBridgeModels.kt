@@ -8,6 +8,8 @@ data class DeviceContact(
 
 data class ContactSnapshot(
     val contacts: List<DeviceContact>,
+    /** Explicit OS READ_CONTACTS result. False is fail-closed at the API. */
+    val permissionGranted: Boolean = false,
     val mutationPerformed: Boolean = false,
     val authorityGranted: Boolean = false
 )

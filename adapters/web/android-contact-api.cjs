@@ -5,10 +5,10 @@
  * ─────────────────────────────────────────────────
  * Device Bridge dedicated endpoint.
  *
- * Android already performed READ_CONTACTS.
+ * Android already performed READ_CONTACTS and explicitly reports that result.
  * This adapter:
- *   - accepts ephemeral contact snapshot
- *   - runs existing ContactAnalyzer
+ *   - accepts an ephemeral contact snapshot only after permission=true
+ *   - routes CONTACT_READ through Core Decision → Gate → Runtime → Audit
  *   - returns CONTACT_PROPOSE candidates
  *   - does NOT persist address books
  *   - does NOT merge/delete
@@ -19,6 +19,18 @@ const {
   ContactAnalyzer,
   CONTACT_METHOD,
 } = require('../../products/phone-friend/contacts/contact-analyzer.cjs');
+
+const { DecisionEngine } = require('../../core/decision-engine.cjs');
+const { GateEngine } = require('../../core/gate-engine.cjs');
+const { ActionRuntime } = require('../../core/action-runtime.cjs');
+const { ExecutionEngine } = require('../../core/execution-engine.cjs');
+const { AuditEngine } = require('../../core/audit-engine.cjs');
+const {
+  CapabilityRuntime,
+} = require('../../products/phone-friend/runtime/capability-runtime.cjs');
+const {
+  ContactService,
+} = require('../../products/phone-friend/capabilities/contact-service.cjs');
 
 const {
   sanitizeAndroidContact,
@@ -104,34 +116,120 @@ function mapProposal(candidate) {
 class AndroidContactApi {
   constructor(opts = {}) {
     this.analyzer = opts.analyzer || new ContactAnalyzer();
+    this.audit = opts.auditEngine || new AuditEngine();
   }
 
-  analyze(input = {}) {
+  getAudit() {
+    return this.audit;
+  }
+
+  _permissionDenied(method, error = 'permission_required') {
+    this.audit.append({
+      event: 'ANDROID_CONTACT_READ_DENIED',
+      data: {
+        method,
+        reason: error,
+        resource_id: 'android-contact-snapshot',
+      },
+    });
+
+    return clone({
+      ok: false,
+      method,
+      candidate_count: 0,
+      proposals: [],
+      mutated: false,
+      authority_granted: false,
+      permission_required: ANDROID_CONTACT_PERMISSION.READ,
+      error,
+      assistant_text:
+        '연락처를 읽으려면 권한이 필요해요. 읽기만 하고 수정하거나 삭제하지 않을게요.',
+    });
+  }
+
+  _coreForSnapshot(snapshot) {
+    const decisions = new DecisionEngine();
+    const gates = new GateEngine();
+    const actions = new ActionRuntime({ auditEngine: this.audit });
+
+    const connector = {
+      async execute(action) {
+        if (!action || action.skill !== 'CONTACT_READ') {
+          return { ok: false, error: 'contact_read_only' };
+        }
+
+        return {
+          ok: true,
+          contacts: clone(snapshot),
+          count: snapshot.length,
+          permission: 'READ_ONLY',
+          mutation_performed: false,
+          authority_granted: false,
+        };
+      },
+
+      async verify(action, result) {
+        return {
+          ok: Boolean(
+            action &&
+              action.skill === 'CONTACT_READ' &&
+              result &&
+              Array.isArray(result.contacts) &&
+              result.mutation_performed === false
+          ),
+          verified: 'android_contact_read_completed',
+          mutation_verified: false,
+          authority_granted: false,
+        };
+      },
+    };
+
+    const executions = new ExecutionEngine({
+      actionRuntime: actions,
+      auditEngine: this.audit,
+      connectors: { 'android-contact-snapshot': connector },
+    });
+
+    return {
+      capability: new CapabilityRuntime({
+        decisionEngine: decisions,
+        gateEngine: gates,
+        actionRuntime: actions,
+        executionEngine: executions,
+      }),
+      contacts: new ContactService({ analyzer: this.analyzer }),
+    };
+  }
+
+  async analyze(input = {}) {
     const method = normalizeMethod(input.method);
 
     /**
-     * If client explicitly says permission was not granted,
-     * do not analyze even if contacts arrived.
+     * Fail closed.  An absent value is not an Android OS grant.  Android
+     * client and permission flag are both explicit so a browser payload cannot
+     * silently become a device-contact read request.
      */
-    if (input.permission_granted === false) {
-      return clone({
-        ok: false,
-        method,
-        candidate_count: 0,
-        proposals: [],
-        mutated: false,
-        authority_granted: false,
-        permission_required: ANDROID_CONTACT_PERMISSION.READ,
-        error: 'permission_required',
-        assistant_text:
-          '연락처를 읽으려면 권한이 필요해요. 읽기만 하고 수정하거나 삭제하지 않을게요.',
-      });
+    if (input.client !== 'ANDROID') {
+      return this._permissionDenied(method, 'android_client_required');
+    }
+
+    if (input.permission_granted !== true) {
+      return this._permissionDenied(method);
     }
 
     let snapshot;
     try {
       snapshot = sanitizeSnapshot(input.contacts || []);
     } catch {
+      this.audit.append({
+        event: 'ANDROID_CONTACT_SNAPSHOT_REJECTED',
+        data: {
+          method,
+          reason: 'invalid_contact_snapshot',
+          resource_id: 'android-contact-snapshot',
+        },
+      });
+
       return clone({
         ok: false,
         method,
@@ -146,16 +244,56 @@ class AndroidContactApi {
     }
 
     try {
-      const analysis = this.analyzer.analyze(snapshot, {
+      const core = this._coreForSnapshot(snapshot);
+      const result = await core.contacts.propose(core.capability, {
         method,
+        subject: input.subject || 'android:local',
+        device_id: input.device_id || 'android:local',
+        connector: 'android-contact-snapshot',
+        idempotency_key:
+          input.idempotency_key ||
+          `android-contact-read:${input.device_id || 'local'}:${method}`,
+        permission_ok: true,
+        gate_context: { policy_ok: true },
+        limit: input.limit,
         now: input.now,
       });
 
-      const proposals = this.analyzer
-        .propose(analysis, { limit: input.limit })
-        .map(mapProposal);
+      if (result.proposed !== true) {
+        return clone({
+          ok: false,
+          method,
+          candidate_count: 0,
+          proposals: [],
+          mutated: false,
+          authority_granted: false,
+          error: result.status || 'contact_read_not_completed',
+          assistant_text:
+            '연락처 읽기 확인을 완료하지 못했어요. 연락처는 변경하지 않았어요.',
+        });
+      }
 
-      const count = analysis.candidate_count || 0;
+      const proposals = result.proposals.map(mapProposal);
+      const count = result.analysis.candidate_count || 0;
+
+      this.audit.append({
+        event: 'ANDROID_CONTACT_ANALYSIS_COMPLETED',
+        action_id:
+          result.read_result &&
+          result.read_result.runtime_action &&
+          result.read_result.runtime_action.runtime_action_id,
+        execution_id:
+          result.read_result &&
+          result.read_result.execution &&
+          result.read_result.execution.execution_id,
+        data: {
+          method,
+          candidate_count: count,
+          proposal_count: proposals.length,
+          resource_id: 'android-contact-snapshot',
+          mutated: false,
+        },
+      });
 
       return clone({
         ok: true,
@@ -231,10 +369,14 @@ class AndroidContactApi {
       }
 
       try {
-        const view = api.analyze({
+        const view = await api.analyze({
           method: body.method,
           contacts: body.contacts,
           permission_granted: body.permission_granted,
+          client: body.client,
+          subject: body.subject,
+          device_id: body.device_id,
+          idempotency_key: body.idempotency_key,
           now: body.now,
           limit: body.limit,
         });

@@ -20,6 +20,7 @@ class DeviceBridgeModelsTest {
 
         assertFalse(snapshot.authorityGranted)
         assertFalse(snapshot.mutationPerformed)
+        assertFalse(snapshot.permissionGranted)
     }
 
     @Test
