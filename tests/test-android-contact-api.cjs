@@ -35,9 +35,11 @@ async function run() {
 
   console.log('▸ TC-1: duplicate analyze propose');
   {
-    const view = api.analyze({
+    const view = await api.analyze({
       method: 'DUPLICATES',
       contacts: sample,
+      client: 'ANDROID',
+      permission_granted: true,
     });
 
     assert(view.ok === true, 'ok');
@@ -63,9 +65,10 @@ async function run() {
 
   console.log('▸ TC-2: permission_granted false');
   {
-    const view = api.analyze({
+    const view = await api.analyze({
       method: 'DUPLICATES',
       contacts: sample,
+      client: 'ANDROID',
       permission_granted: false,
     });
 
@@ -80,9 +83,11 @@ async function run() {
 
   console.log('▸ TC-3: empty contacts');
   {
-    const view = api.analyze({
+    const view = await api.analyze({
       method: 'DUPLICATES',
       contacts: [],
+      client: 'ANDROID',
+      permission_granted: true,
     });
     assert(view.ok === true, 'ok');
     assert(view.candidate_count === 0, '0 candidates');
@@ -96,6 +101,8 @@ async function run() {
       body: JSON.stringify({
         method: 'DUPLICATES',
         contacts: sample,
+        client: 'ANDROID',
+        permission_granted: true,
         authority_granted: true,
       }),
     });
@@ -106,13 +113,46 @@ async function run() {
 
   console.log('▸ TC-5: assistant text mentions no mutate');
   {
-    const view = api.analyze({
+    const view = await api.analyze({
       method: 'DUPLICATES',
       contacts: sample,
+      client: 'ANDROID',
+      permission_granted: true,
     });
     assert(
       /합치거나 삭제하지/.test(view.assistant_text || ''),
       'no mutate copy'
+    );
+  }
+
+  console.log('▸ TC-6: permission / Android client fail closed');
+  {
+    const absent = await api.analyze({
+      method: 'DUPLICATES',
+      contacts: sample,
+      client: 'ANDROID',
+    });
+    const wrongClient = await api.analyze({
+      method: 'DUPLICATES',
+      contacts: sample,
+      permission_granted: true,
+    });
+
+    assert(absent.ok === false, 'missing permission denied');
+    assert(absent.error === 'permission_required', 'missing permission reason');
+    assert(wrongClient.ok === false, 'missing Android client denied');
+    assert(wrongClient.error === 'android_client_required', 'Android client reason');
+  }
+
+  console.log('▸ TC-7: Core Decision/Gate/Runtime/Audit path');
+  {
+    const events = api.getAudit().list();
+    assert(events.some((entry) => entry.event === 'ACTION_READY'), 'ActionRuntime audit');
+    assert(events.some((entry) => entry.event === 'EXECUTION_STARTED'), 'Execution audit');
+    assert(events.some((entry) => entry.event === 'VERIFICATION_SUCCEEDED'), 'verification audit');
+    assert(
+      events.some((entry) => entry.event === 'ANDROID_CONTACT_ANALYSIS_COMPLETED'),
+      'endpoint completion audit'
     );
   }
 
