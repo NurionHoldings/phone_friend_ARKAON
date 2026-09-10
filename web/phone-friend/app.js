@@ -1,5 +1,7 @@
 (() => {
   const API_URL = '/api/phone-friend';
+  const GITHUB_RELEASES_URL =
+    'https://api.github.com/repos/NurionHoldings/phone_friend_ARKAON/releases';
 
   const transcript = document.getElementById('transcript');
   const composer = document.getElementById('composer');
@@ -10,6 +12,9 @@
   const presenceLabel = document.getElementById('presenceLabel');
   const statusBadge = document.getElementById('statusBadge');
   const progressPanel = document.getElementById('progressPanel');
+  const apkDownloadLink = document.getElementById('apkDownloadLink');
+  const apkChecksumLink = document.getElementById('apkChecksumLink');
+  const apkMetadataLink = document.getElementById('apkMetadataLink');
 
   let sessionId = null;
   let continuationToken = null;
@@ -26,6 +31,54 @@
     HAPPY: '다 했어.',
     SLEEP: '필요할 때 불러줘.',
   };
+
+  function setDownloadAssetLink(link, asset) {
+    if (!link || !asset || typeof asset.browser_download_url !== 'string') return;
+    link.href = asset.browser_download_url;
+  }
+
+  async function bindLatestInternalTestApk() {
+    if (!apkDownloadLink || !apkChecksumLink || !apkMetadataLink) return;
+
+    try {
+      const response = await fetch(GITHUB_RELEASES_URL, {
+        headers: { Accept: 'application/vnd.github+json' },
+      });
+      if (!response.ok) return;
+
+      const releases = await response.json();
+      if (!Array.isArray(releases)) return;
+
+      const latest = releases
+        .filter(
+          (release) =>
+            release &&
+            release.prerelease === true &&
+            typeof release.tag_name === 'string' &&
+            release.tag_name.startsWith('phone-friend-test-') &&
+            typeof release.published_at === 'string'
+        )
+        .sort((left, right) => Date.parse(right.published_at) - Date.parse(left.published_at))[0];
+      if (!latest || !Array.isArray(latest.assets)) return;
+
+      const assets = new Map(
+        latest.assets.map((asset) => [asset && asset.name, asset])
+      );
+      const apk = assets.get('phone-friend-test.apk');
+      const checksum = assets.get('phone-friend-test.apk.sha256');
+      const metadata = assets.get('phone-friend-test.json');
+      if (!apk || !checksum || !metadata) return;
+
+      setDownloadAssetLink(apkDownloadLink, apk);
+      setDownloadAssetLink(apkChecksumLink, checksum);
+      setDownloadAssetLink(apkMetadataLink, metadata);
+      apkDownloadLink.textContent = '최신 테스트 APK 내려받기';
+      apkChecksumLink.textContent = 'SHA-256 체크섬';
+      apkMetadataLink.textContent = '빌드 정보';
+    } catch (error) {
+      // The public Releases page in the markup remains the safe fallback.
+    }
+  }
 
   function isPermissionAllow(text) {
     return /^(허용|응|어|네|예|좋아|허락|ㅇㅇ|ok|okay|그래)(?:요|습니다)?[!~.]*$/i.test(
@@ -458,5 +511,6 @@
     status: 'IDLE',
   });
   renderProgress([]);
+  bindLatestInternalTestApk();
   input.focus();
 })();

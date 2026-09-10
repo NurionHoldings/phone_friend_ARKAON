@@ -22,7 +22,7 @@ android {
         buildConfigField(
             "String",
             "PHONE_FRIEND_BASE_URL",
-            "\"https://arkaon.netlify.app\""
+            "\"https://arkaonphone.netlify.app\""
         )
     }
 
