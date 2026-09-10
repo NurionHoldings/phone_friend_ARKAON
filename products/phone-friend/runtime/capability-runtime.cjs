@@ -27,6 +27,10 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function isCompletedExecution(status) {
+  return status === 'SUCCEEDED' || status === 'VERIFIED';
+}
+
 class CapabilityRuntime {
   constructor(opts = {}) {
     if (!opts.decisionEngine) {
@@ -332,12 +336,19 @@ class CapabilityRuntime {
         }
       );
 
+    const completed = isCompletedExecution(execution.status);
+
     return clone({
       status:
         execution.status,
 
-      executed:
-        true,
+      /**
+       * executed means the requested operation completed successfully, not
+       * merely that a connector was invoked.  `attempted` preserves the
+       * operational fact for failure diagnostics.
+       */
+      executed: completed,
+      attempted: true,
 
       target,
       intent,
@@ -362,4 +373,5 @@ class CapabilityRuntime {
 
 module.exports = {
   CapabilityRuntime,
+  isCompletedExecution,
 };
