@@ -36,6 +36,7 @@ class ArkaonDeviceBridge(
             ContactReadResult.Success(
                 ContactSnapshot(
                     contacts = contacts,
+                    permissionGranted = true,
                     mutationPerformed = false,
                     authorityGranted = false
                 )
