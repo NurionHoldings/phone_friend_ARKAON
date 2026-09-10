@@ -30,6 +30,46 @@ function hashEntry(entry) {
     .digest('hex');
 }
 
+const SENSITIVE_AUDIT_KEY = /(?:^|_)(?:sms|message|content|body|text|phone|phones|telephone|tel|mobile|contact|contacts|name|names|email|emails|recipient|continuation|token|secret)(?:$|_)/i;
+
+function redactValue(value, key = '') {
+  if (SENSITIVE_AUDIT_KEY.test(key)) {
+    const item = {
+      redacted: true,
+      sha256: hashEntry({ value }),
+    };
+
+    if (Array.isArray(value) || typeof value === 'string') {
+      item.count = Array.isArray(value) ? value.length : String(value).length;
+    }
+
+    return item;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => redactValue(item));
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([childKey, childValue]) => [
+        childKey,
+        redactValue(childValue, childKey),
+      ])
+    );
+  }
+
+  return clone(value);
+}
+
+function redactAuditData(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return redactValue(data);
+  }
+
+  return redactValue(data);
+}
+
 class AuditEngine {
   constructor() {
     this._entries = [];
@@ -57,7 +97,7 @@ class AuditEngine {
       decision_id: input.decision_id || null,
       gate_id: input.gate_id || null,
       subject: input.subject || null,
-      data: clone(input.data || {}),
+      data: redactAuditData(input.data || {}),
       created_at: input.created_at || new Date().toISOString(),
       previous_hash: previous ? previous.hash : null,
     };
@@ -165,4 +205,5 @@ module.exports = {
   AuditEngine,
   stableSerialize,
   hashEntry,
+  redactAuditData,
 };
