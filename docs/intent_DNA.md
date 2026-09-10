@@ -27,4 +27,4 @@
 - CI: `PENDING` (최종 HEAD에서 감사 통과 후 1회 실행)
 - 배포: `PENDING` (CI GREEN 이후 별도 확인, 본 작업에서 실행하지 않음)
 - 실패 원인 및 수정: 기존 `verify` 스크립트가 가리키는 `tests/verify-core.cjs`가 없어서 실제 전체 검증이 불가능한 상태였음. 전체 Node test runner와 정적 검사로 교체해 수정. Sol 검토에서 continuation token 미구현·pending DENY 미전파·VERIFY_FAILED 재검증 불일치·lockfile 없는 npm cache를 발견해 본 delta로 수정.
-- 원격 반영 차단: 일반 Git push는 HTTPS 자격증명이 없어 실패했고, 연결된 GitHub integration의 branch 생성도 `403 Resource not accessible by integration`으로 거부됨. 동일 상태 재시도 없이 중단. 로컬 최종 HEAD `1d4cba8` 이후 본 실패 기록 커밋만 추가하며, 원격 쓰기 권한 복구 후 최종 원격 HEAD에서 CI를 1회 실행해야 함.
+- 원격 반영 이력: 일반 Git push는 HTTPS 자격증명 부재로 실패했고 GitHub integration도 최초 `403 Resource not accessible by integration`으로 거부되어 동일 상태 재시도 없이 중단함. 사용자가 저장소 접근을 저장한 뒤 branch 생성과 19개 변경 파일 반영이 성공했으며, 구현 파일 반영 마지막 원격 커밋은 `79519b3`이다. 본 원장 갱신 커밋을 최종 pre-PR HEAD로 삼아 CI를 1회 실행한다.
