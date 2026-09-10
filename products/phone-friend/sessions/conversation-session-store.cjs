@@ -33,25 +33,71 @@ function makeId(prefix = 'sess') {
   return `${prefix}_${crypto.randomUUID()}`;
 }
 
+function makeContinuationToken() {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
+function hashContinuationToken(token) {
+  return crypto
+    .createHash('sha256')
+    .update(String(token))
+    .digest('hex');
+}
+
+function hasValue(value) {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
 class ConversationSessionStore {
   constructor(opts = {}) {
     this.store = opts.store || new MemoryStore();
     this.ttlMs =
       Number(opts.ttlMs) > 0 ? Number(opts.ttlMs) : DEFAULT_TTL_MS;
+    /**
+     * Public adapters opt in to a bearer continuation token. Keeping the
+     * default compatible preserves internal, in-process test harnesses while
+     * Netlify/Web never accepts session_id alone.
+     */
+    this.requireContinuationToken = opts.requireContinuationToken === true;
   }
 
   _key(id) {
     return `conv:${id}`;
   }
 
+  _getInternal(id, now = new Date()) {
+    const session = this.store.get(this._key(id));
+    if (!session) return null;
+
+    if (this.isExpired(session, now)) {
+      session.status = SESSION_STATUS.EXPIRED;
+      this.store.set(this._key(id), session);
+    }
+
+    return session;
+  }
+
+  _public(session, continuationToken = null) {
+    if (!session) return null;
+    const result = clone(session);
+    delete result.continuation_token_hash;
+    if (continuationToken) {
+      result.continuation_token = continuationToken;
+    }
+    return result;
+  }
+
   create(input = {}) {
     const now = input.now ? new Date(input.now) : new Date();
     const id = input.id || makeId();
+    const continuationToken = makeContinuationToken();
 
     const session = {
       id,
       subject: input.subject || null,
       device_id: input.device_id || null,
+      /** Raw continuation tokens never enter persistent session state. */
+      continuation_token_hash: hashContinuationToken(continuationToken),
       status: SESSION_STATUS.ACTIVE,
       intent: input.intent ? clone(input.intent) : null,
       slots: clone(input.slots || {}),
@@ -68,20 +114,47 @@ class ConversationSessionStore {
     };
 
     this.store.set(this._key(id), session);
-    return clone(session);
+    return this._public(session, continuationToken);
   }
 
   get(id, now = new Date()) {
-    const session = this.store.get(this._key(id));
-    if (!session) return null;
+    return this._public(this._getInternal(id, now));
+  }
 
-    if (this.isExpired(session, now)) {
-      session.status = SESSION_STATUS.EXPIRED;
-      this.store.set(this._key(id), session);
-      return clone(session);
+  validateContinuation(id, token, now = new Date()) {
+    const session = this._getInternal(id, now);
+    if (!session) return { ok: false, reason: 'session_not_found' };
+
+    if (!this.requireContinuationToken) {
+      return { ok: true, session: this._public(session) };
     }
 
-    return clone(session);
+    if (!hasValue(token)) {
+      return { ok: false, reason: 'continuation_token_required' };
+    }
+
+    const expected = Buffer.from(session.continuation_token_hash || '', 'hex');
+    const actual = Buffer.from(hashContinuationToken(token), 'hex');
+    const ok =
+      expected.length === actual.length &&
+      expected.length > 0 &&
+      crypto.timingSafeEqual(expected, actual);
+
+    return ok
+      ? { ok: true, session: this._public(session) }
+      : { ok: false, reason: 'continuation_token_invalid' };
+  }
+
+  bindingMatches(session, binding = {}) {
+    if (!session) return false;
+
+    const subjectProvided = hasValue(binding.subject);
+    const deviceProvided = hasValue(binding.device_id);
+
+    return (
+      (!session.subject || (subjectProvided && session.subject === binding.subject)) &&
+      (!session.device_id || (deviceProvided && session.device_id === binding.device_id))
+    );
   }
 
   isExpired(session, now = new Date()) {
@@ -91,7 +164,7 @@ class ConversationSessionStore {
   }
 
   update(id, patch = {}, now = new Date()) {
-    const current = this.get(id, now);
+    const current = this._getInternal(id, now);
     if (!current) {
       throw new Error('session_not_found');
     }
@@ -105,6 +178,7 @@ class ConversationSessionStore {
       ...clone(patch),
       id: current.id,
       created_at: current.created_at,
+      continuation_token_hash: current.continuation_token_hash,
       updated_at: (now instanceof Date ? now : new Date(now)).toISOString(),
     };
 
@@ -121,11 +195,11 @@ class ConversationSessionStore {
     }
 
     this.store.set(this._key(id), next);
-    return clone(next);
+    return this._public(next);
   }
 
   appendTurn(id, turn, now = new Date()) {
-    const current = this.get(id, now);
+    const current = this._getInternal(id, now);
     if (!current) throw new Error('session_not_found');
     if (current.status === SESSION_STATUS.EXPIRED) {
       throw new Error('session_expired');
@@ -163,4 +237,5 @@ module.exports = {
   ConversationSessionStore,
   SESSION_STATUS,
   DEFAULT_TTL_MS,
+  hashContinuationToken,
 };
